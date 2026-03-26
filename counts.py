@@ -1,61 +1,100 @@
-import json
-import re
-from collections import Counter
-import matplotlib.pyplot as plt  # Import for plotting
+import json  #Biblioteca para manipular arquivos JSON
+import re  #Biblioteca para trabalhar com expressões regulares
+from collections import Counter  #Para contar ocorrências de itens
+import matplotlib.pyplot as plt  #Biblioteca para plotagem de gráficos
+import seaborn as sns  #Biblioteca para gráficos estatísticos mais bonitos
+import pandas as pd  #Biblioteca para manipulação de dados (não usada diretamente aqui, mas importada)
 
-#Path to the JSON file
-arquivo = "/home/barbara/documents/RegPatternSearch/resumo.json"
+#Caminho do arquivo JSONL exportado do NCBI Datasets
+jsonl_path = "/home/barbara/documents/RegPatternSearch/assembly_data_report.jsonl"
 
+#Abrir o arquivo JSONL e carregar todas as linhas, convertendo cada linha para objeto Python com json.loads()
+with open(jsonl_path, 'r') as f:
+    linhas = [json.loads(linha) for linha in f]
+
+#Função para extrair o nome do organismo de forma segura, tentando dois locais diferentes no JSON
+def extrair_nome_organismo(linha):
+    try:
+        return linha["organism"]["organismName"]  #Primeiro tenta extrair aqui
+    except KeyError:
+        try:
+            #Se falhar, tenta extrair em outro caminho dentro do JSON
+            return linha["assemblyInfo"]["biosample"]["description"]["organism"]["organismName"]
+        except KeyError:
+            return None  #Se não encontrar, retorna None
+
+#Lista para armazenar nomes de organismos que começam com "Streptomyces"
+strepto_nomes = []
+for linha in linhas:
+    nome = extrair_nome_organismo(linha)  #Extrai nome do organismo para cada linha
+    if nome and nome.startswith("Streptomyces"):  #Filtra somente organismos que começam com "Streptomyces"
+        strepto_nomes.append(nome.strip())  #Remove espaços extras e adiciona na lista
+
+total_genomas = len(strepto_nomes)  #Conta total de genomas Streptomyces encontrados
+
+#Função para extrair gênero + espécie usando expressão regular
 def extrair_genero_especie(nome):
-    #Extract only the genus and species (first two words)
-    match = re.match(r"^([A-Za-z]+ [a-z]+)", nome)
+    #Regex que captura 'Streptomyces sp' ou 'Streptomyces' seguido de uma palavra com letras minúsculas e hífens opcionais
+    match = re.match(r"^(Streptomyces (?:sp|[a-z]+(?:-[a-z]+)?))$", nome)
     if match:
-        return match.group(1)
-    return nome
+        return match.group(1)  #Retorna o nome da espécie
+    return None  #Caso não corresponda ao padrão, retorna None
 
-#Load the JSON file
-with open(arquivo, "r", encoding="utf-8") as f:
-    dados = json.load(f)
+#Contador para acumular frequência de todas as espécies (incluindo "sp")
+contador_todas = Counter()
+for nome in strepto_nomes:
+    especie = extrair_genero_especie(nome)  #Extrai gênero + espécie
+    if especie:
+        contador_todas[especie] += 1  #Incrementa contador para a espécie correspondente
 
-contador_especies = Counter()
+#Imprime o total de genomas Streptomyces analisados
+print(f"Total de genomas Streptomyces analisados: {total_genomas}\n")
 
-#Iterate through each record in the 'reports' list
-for registro in dados.get("reports", []):
-    #Try to get the species name from average_nucleotide_identity
-    nome_completo = registro.get("average_nucleotide_identity", {}).get("submitted_organism")
-    if not nome_completo:
-        #Fallback to using the organism name from the 'organism' field
-        nome_completo = registro.get("organism", {}).get("organism_name")
-    if nome_completo:
-        #Clean and normalize the name, remove brackets and extract genus + species
-        especie = extrair_genero_especie(nome_completo.strip().replace('[', '').replace(']', ''))
-        contador_especies[especie] += 1
+#Imprime a contagem completa por espécie, incluindo "sp"
+print("Contagem por espécie (incluindo 'sp'):")
+for especie, contagem in contador_todas.most_common():
+    print(f"{especie}: {contagem}")  # Imprime cada espécie e sua contagem, ordenado do mais comum ao menos comum
 
-#Print the five most frequent species
-top5 = contador_especies.most_common(5)
-print("\nTop 5 most frequent species:")
-for especie, contagem in top5:
+#Remove da contagem a espécie "Streptomyces sp" para gerar o top 10 real
+contador_filtrado = Counter({k: v for k, v in contador_todas.items() if k != "Streptomyces sp"})
+top10 = contador_filtrado.most_common(10)  # Obtém as 10 espécies mais frequentes (excluindo "Streptomyces sp")
+
+#Imprime o top 10 das espécies mais frequentes, excluindo "Streptomyces sp"
+print("\nTop 10 espécies Streptomyces mais frequentes (excluindo 'Streptomyces sp'):")
+for especie, contagem in top10:
     print(f"{especie}: {contagem}")
 
-#Specific count for a known species - only for test
-print(f"\nCount of 'Streptomyces avermitilis': {contador_especies.get('Streptomyces avermitilis', 0)}")
-print(f"\nCount of 'Streptomyces microflavus': {contador_especies.get('Streptomyces microflavus', 0)}")
+#Preparar listas para plotagem: espécies e suas contagens correspondentes
+especies = [e for e, _ in top10]
+contagens = [c for _, c in top10]
 
-#Total number of genomes analyzed
-print(f"\nTotal number of genomes analyzed: {sum(contador_especies.values())}")
+#Criar figura para o gráfico com tamanho personalizado
+plt.figure(figsize=(12, 6))
 
-#Create a bar chart of the top 5 most frequent species
-especies = [item[0] for item in top5]
-contagens = [item[1] for item in top5]
+#Definir paleta de cores usando seaborn para número de barras igual ao número de espécies
+paleta = sns.color_palette("tab10", n_colors=len(especies))
 
-plt.figure(figsize=(10, 6))
-plt.bar(especies, contagens, color='skyblue')
-plt.title('Top 5 Most Frequent Streptomyces Species')
-plt.xlabel('Species')
-plt.ylabel('Count')
+#Criar gráfico de barras, usando a lista de espécies para o eixo x e contagens para y
+#Usa o argumento hue para colorir barras separadamente, e legend=False para não exibir legenda extra
+ax = sns.barplot(x=especies, y=contagens, hue=especies, palette=paleta, legend=False)
+
+#Definir título e rótulos dos eixos do gráfico
+plt.title(f'As 10 espécies de Streptomyces mais frequentes')
+plt.xlabel('Espécie')
+plt.ylabel('Contagem')
+
+#Rotacionar os nomes no eixo x para melhor visualização
 plt.xticks(rotation=45, ha='right')
+
+#Adicionar valores numéricos no topo de cada barra (a contagem)
+for i, v in enumerate(contagens):
+    ax.text(i, v + max(contagens)*0.01, str(v), ha='center')  # Pequeno deslocamento para ficar acima da barra
+
+#Ajustar layout para evitar corte de elementos no gráfico
 plt.tight_layout()
 
-#Save the figure and show it
-plt.savefig("top5_species_barplot.png")  # Saves the plot as a PNG file
-plt.show()  # Displays the plot interactively
+#Salvar a figura em arquivo PNG
+plt.savefig("top10_streptomyces_species.png")
+
+#Mostrar o gráfico na tela
+plt.show()

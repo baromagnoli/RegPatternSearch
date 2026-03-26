@@ -21,7 +21,6 @@ This repository contains scripts, data, and documentation related to the analysi
 - Prokka  
 - PhyML  
 - AntiSMASH  
-- NextFlow
 
 ---
 

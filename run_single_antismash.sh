@@ -10,7 +10,7 @@ source /temporario2/9877294/anaconda3/etc/profile.d/conda.sh
 conda activate
 
 # Diretório de saída
-OUTPUT_DIR="/temporario2/9877294/antismash_output_all/${BASENAME}"
+OUTPUT_DIR="/temporario2/9877294/antismash_streptomycesalbidos/${BASENAME}"
 mkdir -p "$OUTPUT_DIR"
 
 # Executa antiSMASH
